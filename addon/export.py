@@ -64,8 +64,12 @@ mapping_road_mark_color = {
     'yellow': xodr.RoadMarkColor.yellow,
 }
 
-mapping_object_type = {
+mapping_vehicle_type = {
     'car': xosc.VehicleCategory.car,
+}
+
+mapping_pedestrian_type = {
+    'pedestrian': xosc.PedestrianCategory.pedestrian,
 }
 
 mapping_contact_point = {
@@ -109,8 +113,8 @@ class DSC_OT_export(bpy.types.Operator):
         row.prop(self, "mesh_file_type", expand=True)
 
     def execute(self, context):
-        self.export_vehicle_models(context)
-        self.export_scenegraph_file()
+        self.export_entity_models(context)
+        self.export_static_scene_model()
         self.export_openscenario()
         return {'FINISHED'}
 
@@ -118,11 +122,11 @@ class DSC_OT_export(bpy.types.Operator):
         context.window_manager.fileselect_add(self)
         return {'RUNNING_MODAL'}
 
-    def export_scenegraph_file(self):
+    def export_static_scene_model(self):
         '''
             Export the scene mesh to file
         '''
-        file_path = pathlib.Path(self.directory) / 'scenegraph' / 'export.suffix'
+        file_path = pathlib.Path(self.directory) / 'models'/ 'static_scene' / 'bdsc_export.suffix'
         file_path.parent.mkdir(parents=True, exist_ok=True)
         bpy.ops.object.select_all(action='SELECT')
         if helpers.collection_exists(['OpenSCENARIO']):
@@ -131,24 +135,30 @@ class DSC_OT_export(bpy.types.Operator):
             for child in bpy.data.collections['OpenSCENARIO'].children:
                 for obj in child.objects:
                     obj.select_set(False)
+            for obj in bpy.data.collections['OpenDRIVE'].objects:
+                if 'dsc_type' in obj and obj['dsc_type'] == 'junction_connecting_road':
+                        obj.select_set(False)
         self.export_mesh(file_path)
         bpy.ops.object.select_all(action='DESELECT')
 
-    def export_vehicle_models(self, context):
+    def export_entity_models(self, context):
         '''
             Export vehicle models to files.
         '''
-        model_dir = pathlib.Path(self.directory) / 'models' / 'car.obj'
+        model_dir = pathlib.Path(self.directory) / 'models' / 'entities' / 'vehicle.obj'
         model_dir.parent.mkdir(parents=True, exist_ok=True)
-        catalog_path = pathlib.Path(self.directory) / 'catalogs' / 'vehicles' / 'VehicleCatalog.xosc'
-        catalog_path.parent.mkdir(parents=True, exist_ok=True)
-        # Select a car
+        vehicle_catalog_path = pathlib.Path(self.directory) / 'catalogs' / 'vehicles' / 'VehicleCatalog.xosc'
+        vehicle_catalog_path.parent.mkdir(parents=True, exist_ok=True)
+        pedestrian_catalog_path = pathlib.Path(self.directory) / 'catalogs' / 'pedestrians' / 'PedestrianCatalog.xosc'
+        pedestrian_catalog_path.parent.mkdir(parents=True, exist_ok=True)
+        # Select a vehicle
         bpy.ops.object.select_all(action='DESELECT')
-        if helpers.collection_exists(['OpenSCENARIO','dynamic_objects']):
-            catalog_file_created = False
-            for obj in bpy.data.collections['OpenSCENARIO'].children['dynamic_objects'].objects:
-                print('Export object model for', obj.name)
-                model_path = pathlib.Path(self.directory) / 'models' / str(obj.name)
+        if helpers.collection_exists(['OpenSCENARIO','entities']):
+            vehicle_catalog_file_created = False
+            pedestrian_catalog_file_created = False
+            for obj in bpy.data.collections['OpenSCENARIO'].children['entities'].objects:
+                print('Export entity object model for', obj.name)
+                model_path = pathlib.Path(self.directory) / 'models' / 'entities' / str(obj.name)
                 # Create a temporary copy without transform
                 obj_export = obj.copy()
                 helpers.link_object_openscenario(context, obj_export, subcategory=None)
@@ -159,23 +169,42 @@ class DSC_OT_export(bpy.types.Operator):
                 self.export_mesh(model_path)
                 bpy.ops.object.delete()
                 self.convert_to_osgb(model_path)
-                # Add vehicle to vehicle catalog
-                # TODO store in and read parameters from object
-                bounding_box = xosc.BoundingBox(2,5,1.8,2.0,0,0.9)
-                axle_front = xosc.Axle(0.523599,0.8,1.554,2.98,0.4)
-                axle_rear = xosc.Axle(0,0.8,1.525,0,0.4)
-                car = xosc.Vehicle(obj.name,mapping_object_type[obj['dsc_type']],
-                    bounding_box,axle_front,axle_rear,69,10,10)
-                car.add_property_file('../models/' + obj.name + '.' + self.mesh_file_type)
-                car.add_property('control','internal')
-                car.add_property('model_id','0')
-                if not catalog_file_created:
-                    # Create new catalog with first vehicle
-                    car.dump_to_catalog(catalog_path,'VehicleCatalog',
-                        'DSC vehicle catalog','Blender Driving Scenario Creator')
-                    catalog_file_created = True
+                if obj['entity_type'] == 'vehicle':
+                    # Add vehicle to vehicle catalog
+                    # TODO store in and read vehicle parameters from object
+                    bounding_box = xosc.BoundingBox(2,5,1.8,2.0,0,0.9)
+                    axle_front = xosc.Axle(0.523599,0.8,1.554,2.98,0.4)
+                    axle_rear = xosc.Axle(0,0.8,1.525,0,0.4)
+                    vehicle = xosc.Vehicle(obj.name,mapping_vehicle_type[obj['entity_subtype']],
+                        bounding_box,axle_front,axle_rear,69,10,10)
+                    vehicle.add_property_file('../models/entities/' + obj.name + '.' + self.mesh_file_type)
+                    vehicle.add_property('control','internal')
+                    vehicle.add_property('model_id','0')
+                    if not vehicle_catalog_file_created:
+                        # Create new catalog with first vehicle
+                        vehicle.dump_to_catalog(vehicle_catalog_path,'VehicleCatalog',
+                            'DSC vehicle catalog','Blender Driving Scenario Creator')
+                        vehicle_catalog_file_created = True
+                    else:
+                        vehicle.append_to_catalog(vehicle_catalog_path)
+                elif obj['entity_type'] == 'pedestrian':
+                    # Add pedestrian to pedestrian catalog
+                    # TODO store in and read pedestrian bounding box from object
+                    bounding_box = xosc.BoundingBox(0.4,0.6,1.8,0,0,0.6)
+                    pedestrian = xosc.Pedestrian(obj.name,80,mapping_pedestrian_type[obj['entity_subtype']],
+                        bounding_box)
+                    pedestrian.add_property_file('../models/entities/' + obj.name + '.' + self.mesh_file_type)
+                    pedestrian.add_property('model_id','0')
+                    if not pedestrian_catalog_file_created:
+                        # Create new catalog with first pedestrian
+                        pedestrian.dump_to_catalog(pedestrian_catalog_path,'PedestrianCatalog',
+                            'DSC pedestrian catalog','Blender Driving Scenario Creator')
+                        pedestrian_catalog_file_created = True
+                    else:
+                        pedestrian.append_to_catalog(pedestrian_catalog_path)
                 else:
-                    car.append_to_catalog(catalog_path)
+                    print('Unknown entity type:', obj['entity_type'])
+                    self.report({'ERROR'}, 'Unknown entity type: {}'.format(obj['entity_type']))
 
     def export_mesh(self, file_path):
         '''
@@ -369,16 +398,16 @@ class DSC_OT_export(bpy.types.Operator):
                                 road_in_cp_r = 'cp_start_r'
                             dj_creator = xodr.DirectJunctionCreator(id=junction_id,
                                 name='direct_junction_' + str(junction_id))
-                            road_in = self.get_road_by_id(roads, obj['id_odr'])
                             road_obj_in = helpers.get_object_xodr_by_id(obj['id_odr'])
-                            lane_ids_road_in_l = self.get_lanes_ids_to_link(road_obj_in, road_in_cp_l)
-                            lane_ids_road_in_r = self.get_lanes_ids_to_link(road_obj_in, road_in_cp_r)
-                            road_out_l = self.get_road_by_id(roads, road_out_id_l)
                             road_obj_out_l = helpers.get_object_xodr_by_id(road_out_id_l)
-                            lane_ids_road_out_l = self.get_lanes_ids_to_link(road_obj_out_l, road_out_cp_l)
-                            road_out_r = self.get_road_by_id(roads, road_out_id_r)
                             road_obj_out_r = helpers.get_object_xodr_by_id(road_out_id_r)
-                            lane_ids_road_out_r = self.get_lanes_ids_to_link(road_obj_out_r, road_out_cp_r)
+                            lane_ids_road_in_l, lane_ids_road_out_l = \
+                                self.get_lanes_ids_to_link(road_obj_in, road_in_cp_l, road_obj_out_l, road_out_cp_l)
+                            lane_ids_road_in_r, lane_ids_road_out_r = \
+                                self.get_lanes_ids_to_link(road_obj_in, road_in_cp_r, road_obj_out_r, road_out_cp_r)
+                            road_in = self.get_road_by_id(roads, obj['id_odr'])
+                            road_out_l = self.get_road_by_id(roads, road_out_id_l)
+                            road_out_r = self.get_road_by_id(roads, road_out_id_r)
                             dj_creator.add_connection(road_in, road_out_l, lane_ids_road_in_l, lane_ids_road_out_l)
                             dj_creator.add_connection(road_in, road_out_r, lane_ids_road_in_r, lane_ids_road_out_r)
                             odr.add_junction(dj_creator.junction)
@@ -447,37 +476,43 @@ class DSC_OT_export(bpy.types.Operator):
         xosc_path.parent.mkdir(parents=True, exist_ok=True)
         init = xosc.Init()
         entities = xosc.Entities()
-        if helpers.collection_exists(['OpenSCENARIO','dynamic_objects']):
-            for obj in bpy.data.collections['OpenSCENARIO'].children['dynamic_objects'].objects:
-                if 'dsc_type' in obj and obj['dsc_type'] == 'car':
-                    car_name = obj.name
-                    print('Add car with name', obj.name)
-                    entities.add_scenario_object(car_name,xosc.CatalogReference('VehicleCatalog', car_name))
+        if helpers.collection_exists(['OpenSCENARIO','entities']):
+            for obj in bpy.data.collections['OpenSCENARIO'].children['entities'].objects:
+                if 'dsc_type' in obj and obj['dsc_type'] == 'entity':
+                    entity_name = obj.name
+                    print('Add entity with name', obj.name)
+                    if obj['entity_type'] == 'vehicle':
+                        catalog = 'VehicleCatalog'
+                    elif obj['entity_type'] == 'pedestrian':
+                        catalog = 'PedestrianCatalog'
+                    else:
+                        self.report({'ERROR'}, 'Unknown entity type {}'.format(obj['dsc_type']))
+                    entities.add_scenario_object(entity_name,xosc.CatalogReference(catalog, entity_name))
                     # Teleport to initial position
-                    init.add_init_action(car_name,
+                    init.add_init_action(entity_name,
                         xosc.TeleportAction(
                             xosc.WorldPosition(
                                 x=obj['position'][0], y=obj['position'][1], z=obj['position'][2], h=obj['hdg'])))
                     # Get pitch and roll from road
-                    init.add_init_action(car_name,
+                    init.add_init_action(entity_name,
                         xosc.TeleportAction(
-                            xosc.RelativeRoadPosition(0, 0, car_name,
+                            xosc.RelativeRoadPosition(0, 0, entity_name,
                                 xosc.Orientation(h=obj['hdg'], p=0, r=0, reference=xosc.ReferenceContext.absolute))))
-                    # Begin driving
-                    init.add_init_action(car_name,
+                    # Begin driving/walking
+                    init.add_init_action(entity_name,
                         xosc.AbsoluteSpeedAction(helpers.kmh_to_ms(obj['speed_initial']),
                             xosc.TransitionDynamics(xosc.DynamicsShapes.step,
                                                     xosc.DynamicsDimension.time, 1)))
                     # Center on closest lane
-                    init.add_init_action(car_name,
-                        xosc.RelativeLaneChangeAction(0, car_name,
+                    init.add_init_action(entity_name,
+                        xosc.RelativeLaneChangeAction(0, entity_name,
                             xosc.TransitionDynamics(xosc.DynamicsShapes.cubic,
                                                     xosc.DynamicsDimension.rate, 2.0)))
         if helpers.collection_exists(['OpenSCENARIO','trajectories']):
             for obj in bpy.data.collections['OpenSCENARIO'].children['trajectories'].objects:
                 if 'dsc_type' in obj and obj['dsc_type'] == 'trajectory':
                     if obj['dsc_subtype'] == 'polyline':
-                        speed_kmh = helpers.get_obj_custom_property('OpenSCENARIO', 'dynamic_objects',
+                        speed_kmh = helpers.get_obj_custom_property('OpenSCENARIO', 'entities',
                             obj['owner_name'], 'speed_initial')
                         if speed_kmh == None:
                             self.report({'ERROR'}, 'Trajectory ' + obj.name + ' owner not found!')
@@ -502,35 +537,39 @@ class DSC_OT_export(bpy.types.Operator):
                         shape.add_knots(knots)
                     trajectory = xosc.Trajectory(obj.name,False)
                     trajectory.add_shape(shape)
-                    action = xosc.FollowTrajectoryAction(trajectory,xosc.FollowMode.follow,
+                    action = xosc.FollowTrajectoryAction(trajectory,xosc.FollowingMode.follow,
                         None,None,None,None)
                     init.add_init_action(obj['owner_name'], action)
                     # FIXME the following does not seem to work with esmini in
                     # init, we need a separate maneuver group/act
                     # # After trajectory following get pitch and roll from road
-                    # init.add_init_action(car_name,
+                    # init.add_init_action(entity_name,
                     #     xosc.TeleportAction(
-                    #         xosc.RelativeRoadPosition(0, 0, car_name,
+                    #         xosc.RelativeRoadPosition(0, 0, entity_name,
                     #             xosc.Orientation(p=0, r=0, reference=xosc.ReferenceContext.relative))))
                     # # Finally center on closest lane
-                    # init.add_init_action(car_name,
-                    #     xosc.RelativeLaneChangeAction(0, car_name,
+                    # init.add_init_action(entity_name,
+                    #     xosc.RelativeLaneChangeAction(0, entity_name,
                     #         xosc.TransitionDynamics(xosc.DynamicsShapes.cubic,
                     #                                 xosc.DynamicsDimension.rate, 2.0)))
 
         # Link .xodr to .xosc with relative path
         dotdot = pathlib.Path('..')
         xodr_path_relative = dotdot / xodr_path.relative_to(pathlib.Path(self.directory))
+        static_scene_model_path_relative = dotdot / 'models' / 'static_scene' \
+            / str('bdsc_export.' + self.mesh_file_type)
+        # static_scene_model_path_relative.with_suffix(self.mesh_file_type)
         if helpers.collection_exists(['OpenDRIVE']):
-            road = xosc.RoadNetwork(str(xodr_path_relative),'./scenegraph/export.' + self.mesh_file_type)
+            road_network = xosc.RoadNetwork(str(xodr_path_relative), str(static_scene_model_path_relative))
         else:
-            road = xosc.RoadNetwork(str(xodr_path_relative))
+            road_network = xosc.RoadNetwork(str(xodr_path_relative))
 
         storyboard = xosc.StoryBoard(init)
-        catalog_vehicles = xosc.Catalog()
-        catalog_vehicles.add_catalog('VehicleCatalog','../catalogs/vehicles')
+        catalogs = xosc.Catalog()
+        catalogs.add_catalog('VehicleCatalog','../catalogs/vehicles')
+        catalogs.add_catalog('PedestrianCatalog','../catalogs/pedestrians')
         scenario = xosc.Scenario('dsc_scenario','blender_dsc',xosc.ParameterDeclarations(),
-            entities,storyboard,road,catalog_vehicles)
+            entities,storyboard,road_network,catalogs)
         scenario.write_xml(str(xosc_path))
 
     def get_element_type_by_id(self, id):
@@ -634,81 +673,140 @@ class DSC_OT_export(bpy.types.Operator):
                 road_pre = self.get_road_by_id(roads, road.predecessor.element_id)
                 if road_pre:
                     road_obj_pre = helpers.get_object_xodr_by_id(road.predecessor.element_id)
-                    lane_ids_road = self.get_lanes_ids_to_link(road_obj, 'cp_start_l')
                     # Check if we are connected to beginning or end of the other road
                     if road_obj['link_predecessor_cp_l'] == 'cp_start_l':
-                        lanes_ids_road_pre = self.get_lanes_ids_to_link(road_obj_pre, 'cp_start_l')
-                        # Reverse for start to start link
-                        lanes_ids_road_pre.reverse()
-                        xodr.create_lane_links_from_ids(road, road_pre, lane_ids_road, lanes_ids_road_pre)
+                        lane_ids_road, lanes_ids_road_pre = \
+                            self.get_lanes_ids_to_link(road_obj, 'cp_start_l', road_obj_pre, 'cp_start_l')
                     elif road_obj['link_predecessor_cp_l'] == 'cp_end_l':
-                        lanes_ids_road_pre = self.get_lanes_ids_to_link(road_obj_pre, 'cp_end_l')
-                        xodr.create_lane_links_from_ids(road, road_pre, lane_ids_road, lanes_ids_road_pre)
+                        lane_ids_road, lanes_ids_road_pre = \
+                            self.get_lanes_ids_to_link(road_obj, 'cp_start_l', road_obj_pre, 'cp_end_l')
+                    xodr.create_lane_links_from_ids(road, road_pre, lane_ids_road, lanes_ids_road_pre)
             if road.successor:
                 road_suc = self.get_road_by_id(roads, road.successor.element_id)
                 if road_suc:
                     road_obj_suc = helpers.get_object_xodr_by_id(road.successor.element_id)
-                    lane_ids_road = self.get_lanes_ids_to_link(road_obj, 'cp_end_l')
                     # Check if we are connected to beginning or end of the other road
                     if road_obj['link_successor_cp_l'] == 'cp_start_l':
-                        lanes_ids_road_suc = self.get_lanes_ids_to_link(road_obj_suc, 'cp_start_l')
-                        xodr.create_lane_links_from_ids(road, road_suc, lane_ids_road, lanes_ids_road_suc)
+                        lane_ids_road, lanes_ids_road_suc = \
+                            self.get_lanes_ids_to_link(road_obj, 'cp_end_l', road_obj_suc, 'cp_start_l')
                     elif road_obj['link_successor_cp_l'] == 'cp_end_l':
-                        lanes_ids_road_suc = self.get_lanes_ids_to_link(road_obj_suc, 'cp_end_l')
-                        # Reverse for start end to end link
-                        lanes_ids_road_suc.reverse()
-                        xodr.create_lane_links_from_ids(road, road_suc, lane_ids_road, lanes_ids_road_suc)
+                        lane_ids_road, lanes_ids_road_suc = \
+                            self.get_lanes_ids_to_link(road_obj, 'cp_end_l', road_obj_suc, 'cp_end_l')
+                    xodr.create_lane_links_from_ids(road, road_suc, lane_ids_road, lanes_ids_road_suc)
 
-    def get_lanes_ids_to_link(self, road_obj, cp_type):
+    def get_non_zero_lane_ids(self, road_obj, cp_type):
+        '''
+            Return the non zero width lane ids for a road's end.
+        '''
+        non_zero_lane_idxs = []
+        # Go through left lanes
+        for lane_idx in range(road_obj['lanes_left_num']):
+            if cp_type == 'cp_end_l' or cp_type == 'cp_end_r':
+                if road_obj['lanes_left_widths_change'][lane_idx] != 'close':
+                    non_zero_lane_idxs.append(road_obj['lanes_left_num']-lane_idx)
+            if cp_type == 'cp_start_l' or cp_type == 'cp_start_r':
+                if road_obj['lanes_left_widths_change'][lane_idx] != 'open':
+                    non_zero_lane_idxs.append(road_obj['lanes_left_num']-lane_idx)
+        # Go through right lanes
+        for lane_idx in range(road_obj['lanes_right_num']):
+            if cp_type == 'cp_end_l' or cp_type == 'cp_end_r':
+                if road_obj['lanes_right_widths_change'][lane_idx] != 'close':
+                    non_zero_lane_idxs.append(-lane_idx-1)
+            if cp_type == 'cp_start_l' or cp_type == 'cp_start_r':
+                if road_obj['lanes_right_widths_change'][lane_idx] != 'open':
+                    non_zero_lane_idxs.append(-lane_idx-1)
+        return non_zero_lane_idxs
+
+    def match_lane_ids(self, non_zero_lane_ids_in, pair_id, non_zero_lane_ids_out, heads_on):
+        '''
+            Match lane ids between two roads with potentially unequal number of
+            lane IDs, based on a known pair. The pair_id can not be a lane with
+            non-zero width except for the center lane (ID=0).
+        '''
+        # Find index of pair elements
+        if pair_id == 0:
+            if -1 in non_zero_lane_ids_in:
+                pair_idx_in = non_zero_lane_ids_in.index(-1)
+            else:
+                pair_idx_in = non_zero_lane_ids_in.index(1)
+            if heads_on:
+                # Take reverse lane links into account
+                if -1 in non_zero_lane_ids_out:
+                    pair_idx_out = non_zero_lane_ids_out.index(1)
+                else:
+                    pair_idx_out = non_zero_lane_ids_out.index(-1)
+            else:
+                if -1 in non_zero_lane_ids_out:
+                    pair_idx_out = non_zero_lane_ids_out.index(-1)
+                else:
+                    pair_idx_out = non_zero_lane_ids_out.index(1)
+        else:
+            pair_idx_in = non_zero_lane_ids_in.index(pair_id)
+            # For the out road use the left most 1 or -1 lane
+            if -1 in non_zero_lane_ids_out:
+                idx_minus_one = non_zero_lane_ids_out.index(-1)
+                if 1 in non_zero_lane_ids_out:
+                    idx_one = non_zero_lane_ids_out.index(1)
+                    if idx_minus_one < idx_one:
+                        pair_idx_out = idx_minus_one
+                    else:
+                        pair_idx_out = idx_one
+                else:
+                    pair_idx_out = idx_minus_one
+            else:
+                pair_idx_out = non_zero_lane_ids_out.index(1)
+        # Calculate how many IDs to pair on each side
+        if (pair_idx_in - pair_idx_out) > 0:
+            pair_num_left = pair_idx_out
+        else:
+            pair_num_left = pair_idx_in
+        num_right_ids_in = len(non_zero_lane_ids_in) - pair_idx_in
+        num_right_ids_out = len(non_zero_lane_ids_out) - pair_idx_out
+        if num_right_ids_in > num_right_ids_out:
+            pair_num_right = num_right_ids_out
+        else:
+            pair_num_right = num_right_ids_in
+        # Pair lanes
+        lane_ids_in = non_zero_lane_ids_in[pair_idx_in-pair_num_left:pair_idx_in]
+        lane_ids_out = non_zero_lane_ids_out[pair_idx_out-pair_num_left:pair_idx_out]
+        lane_ids_in.extend(non_zero_lane_ids_in[pair_idx_in:pair_idx_in+pair_num_right])
+        lane_ids_out.extend(non_zero_lane_ids_out[pair_idx_out:pair_idx_out+pair_num_right])
+        return lane_ids_in, lane_ids_out
+
+    def get_lanes_ids_to_link(self, road_obj_in, cp_type_in, road_obj_out, cp_type_out):
         '''
             Get the lane IDs with non-zero lane width which should be linked.
+            Pair non-split roads based on center lane. If a split road is given
+            assume it is the "in" road. Split roads are either paired based on
+            center lane or based on split lane index. Split to split connections
+            are currently not supported.
         '''
-        # Helper function for conditional comparison
-        def comp_lane_idx(idx, road_obj, cp_type):
-            in_range = True
-            if road_obj['road_split_type'] == 'start':
-                if cp_type == 'cp_start_l':
-                    in_range = idx < road_obj['road_split_lane_idx']
-                elif cp_type == 'cp_start_r':
-                    in_range = idx >= road_obj['road_split_lane_idx']
-            elif road_obj['road_split_type'] == 'end':
-                if cp_type == 'cp_end_l':
-                    in_range = idx < road_obj['road_split_lane_idx']
-                elif cp_type == 'cp_end_r':
-                    in_range = idx >= road_obj['road_split_lane_idx']
-            return in_range
+        non_zero_lane_ids_in = self.get_non_zero_lane_ids(road_obj_in, cp_type_in)
+        non_zero_lane_ids_out = self.get_non_zero_lane_ids(road_obj_out, cp_type_out)
 
-        lane_ids_to_link = []
-        # Count lanes to return right number of lanes in case of split
-        idx = 0
-        if cp_type == 'cp_end_l' or cp_type == 'cp_end_r':
-            for lane_idx in range(road_obj['lanes_left_num']):
-                if comp_lane_idx(idx, road_obj, cp_type):
-                    if road_obj['lanes_left_widths_change'][lane_idx] != 'close':
-                        lane_ids_to_link.append(road_obj['lanes_left_num']-lane_idx)
-                idx +=1
-            # Count centerlane
-            idx += 1
-            for lane_idx in range(road_obj['lanes_right_num']):
-                if comp_lane_idx(idx, road_obj, cp_type):
-                    if road_obj['lanes_right_widths_change'][lane_idx] != 'close':
-                        lane_ids_to_link.append(-lane_idx-1)
-                idx +=1
-        if cp_type == 'cp_start_l' or cp_type == 'cp_start_r':
-            for lane_idx in range(road_obj['lanes_left_num']):
-                if comp_lane_idx(idx, road_obj, cp_type):
-                    if road_obj['lanes_left_widths_change'][lane_idx] != 'open':
-                        lane_ids_to_link.append(road_obj['lanes_left_num']-lane_idx)
-                idx +=1
-            # Count centerlane
-            idx += 1
-            for lane_idx in range(road_obj['lanes_right_num']):
-                if comp_lane_idx(idx, road_obj, cp_type):
-                    if road_obj['lanes_right_widths_change'][lane_idx] != 'open':
-                        lane_ids_to_link.append(-lane_idx-1)
-                idx +=1
-        return lane_ids_to_link
+        # If roads are connected heads on flip road out lanes
+        if (cp_type_in.startswith('cp_start') and cp_type_out.startswith('cp_start')) or \
+           (cp_type_in.startswith('cp_end') and cp_type_out.startswith('cp_end')):
+            non_zero_lane_ids_out.reverse()
+            heads_on = True
+        else:
+            heads_on = False
 
+        # Set pair ID for non split roads (center lane matching)
+        pair_id = 0
+        # Check if road is split and pairing is not with center lane
+        if road_obj_in['road_split_type'] == 'start' and cp_type_in.startswith('cp_start') \
+            or road_obj_in['road_split_type'] == 'end' and cp_type_in.startswith('cp_end'):
+            # Check if pair lane is the center lane or towards the right
+            if cp_type_in == 'cp_end_l' or cp_type_in == 'cp_start_l':
+                if road_obj_in['lanes_left_num'] >= road_obj_in['road_split_lane_idx']:
+                    pair_id = road_obj_in['lanes_right_num'] - road_obj_in['road_split_lane_idx']
+            elif cp_type_in == 'cp_end_r' or cp_type_in == 'cp_start_r':
+                if road_obj_in['lanes_left_num'] < road_obj_in['road_split_lane_idx']:
+                    pair_id = -(road_obj_in['road_split_lane_idx']-road_obj_in['lanes_left_num'])
+        ids_in, ids_out = self.match_lane_ids(non_zero_lane_ids_in, pair_id,
+            non_zero_lane_ids_out, heads_on)
+        return [ids_in, ids_out]
 
     def calculate_trajectory_values(self, obj, speed):
         times = [0]
@@ -796,8 +894,6 @@ class DSC_OT_export(bpy.types.Operator):
                 # FIXME is redundant lane linking needed?
                 xodr.create_lane_links(junction_roads[i], incoming_roads[k])
                 i += 1
-
-
 
     def get_lane_offset(self, road_obj, id_split_road):
         '''

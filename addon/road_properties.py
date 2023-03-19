@@ -148,6 +148,18 @@ class DSC_enum_lane(bpy.types.PropertyGroup):
         else:
             self.split_right = False
             road_split_lane_idx = self.idx + 1
+        # Handle edge case for lane 0 and split at lane -1
+        num_lanes_left = context.scene.road_properties.num_lanes_left
+        num_lanes_right = context.scene.road_properties.num_lanes_right
+        center_lane_idx = num_lanes_left
+        if road_split_lane_idx == center_lane_idx:
+            if num_lanes_right > 0:
+                road_split_lane_idx += 1
+        # Handle first and last lane edge cases (minimum 1 split lane)
+        if road_split_lane_idx == 0:
+            road_split_lane_idx += 1
+        if road_split_lane_idx > num_lanes_left + num_lanes_right:
+            road_split_lane_idx = num_lanes_left + num_lanes_right
         # Store new split index
         context.scene.road_properties.road_split_lane_idx = road_split_lane_idx
         # Split at the desired lane
@@ -205,15 +217,23 @@ class DSC_road_properties(bpy.types.PropertyGroup):
                 # ('eka3_rq38_5', 'EKA 3, RQ 38_5', 'EKA 3, RQ 38_5'),
                 # ('eka2_rq28', 'EKA 1, RQ 28', 'EKA 1, RQ 28'),
                 ('eka1_rq31', 'EKA 1, RQ 31', 'EKA 1, RQ 31'),
-                ('eka1_rq31_exit_right_open', 'EKA 1, RQ 31 - exit right open', 'EKA 1, RQ 31 - exit right open'),
-                ('eka1_rq31_exit_right', 'EKA 1, RQ 31 - exit right', 'EKA 1, RQ 31 - exit right'),
-                ('eka1_rq31_exit_right_continuation', 'EKA 1, RQ 31 - exit right continuation', 'EKA 1, RQ 31 - exit right continuation'),
+                ('eka1_rq31_exit_lane_right_open', 'EKA 1, RQ 31 - exit lane right open', 'EKA 1, RQ 31 - exit lane right open'),
+                ('eka1_rq31_exit_lane_right', 'EKA 1, RQ 31 - exit lane right', 'EKA 1, RQ 31 - exit lane right'),
+                ('eka1_rq31_exit_right_continuation_begin_end', 'EKA 1, RQ 31 - exit right continuation begin/end', 'EKA 1, RQ 31 - exit right continuation begin/end'),
+                ('eka1_rq31_exit_right_continuation_shoulder_begin', 'EKA 1, RQ 31 - exit right continuation shoulder begin', 'EKA 1, RQ 31 - exit right continuation shoulder begin'),
+                ('eka1_rq31_exit_right_continuation_shoulder_end', 'EKA 1, RQ 31 - exit right continuation shoulder end', 'EKA 1, RQ 31 - exit right continuation shoulder end'),
                 ('eka1_rq31_entry_right', 'EKA 1, RQ 31 - entry right', 'EKA 1, RQ 31 - entry right'),
                 ('eka1_rq31_entry_right_close', 'EKA 1, RQ 31 - entry right close', 'EKA 1, RQ 31 - entry right close'),
                 ('eka1_rq36', 'EKA 1, RQ 36', 'EKA 1, RQ 36'),
                 ('eka1_rq43_5', 'EKA 1, RQ 43.5', 'EKA 1, RQ 43.5'),
+                ('on_ramp_end', 'On ramp end', 'On ramp end'),
+                ('on_ramp_shoulder_end', 'On ramp shoulder end', 'On ramp shoulder end'),
                 ('on_ramp', 'On ramp', 'On ramp'),
+                ('off_ramp_begin', 'Off ramp begin', 'Off ramp begin'),
+                ('off_ramp_shoulder_begin', 'Off ramp shoulder begin', 'Off ramp shoulder begin'),
                 ('off_ramp', 'Off ramp', 'Off ramp'),
+                ('shoulder_left', 'Shoulder left', 'Shoulder left'),
+                ('shoulder_right', 'Shoulder right', 'Shoulder right'),
             ),
             name='cross_section',
             description='Road cross section presets',
@@ -271,7 +291,8 @@ class DSC_road_properties(bpy.types.PropertyGroup):
                     self.add_lane('right', 'driving', self.width_driving, 'none', 'broken', 'standard', 0.12, 'white')
         self.road_split_type = 'none'
         # Set split index one above maximum to make all lanes go left
-        self.road_split_lane_idx = self.num_lanes_left + self.num_lanes_right + 1
+        self.road_split_lane_idx = self.num_lanes_left + self.num_lanes_right
+        self.lanes[-1].split_right = True
         # Allow callbacks again
         self.lock_lanes = False
 

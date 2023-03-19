@@ -2,6 +2,55 @@
 
 ## [Unreleased]
 
+## [0.19.1] - 2023-03-04
+
+### Fixed
+- Init action which broke during initial pedestrian implementation
+- Do not link roads when snapping to grid. This fixes a bug where we would
+  disable the road snapping while snapping to the grid (holding <kbd>Ctrl</kbd>)
+  but the roads would sometimes still be linked when touched with the mouse
+  pointer.
+
+## [0.19.0] - 2023-03-04
+
+### Added
+- Operator and export of pedestrian OpenSCENARIO entities
+
+### Changed
+- Avoid snapping to roads when grid snapping is active (holding <kbd>Ctrl</kbd>)
+- Connecting roads are not exported to 3D static scene model anymore
+
+### Fixed
+- Scenariogeneration renaming enum xosc.FollowMode.follow to
+  xosc.FollowingMode.follow in scenariogeneration lib version 0.11.0. __Please
+  update the scenariogeneration dependency in your Blender installation,
+  otherwise OpenSCENARIO trajectory export will fail.__
+
+## [0.18.1] - 2023-02-24
+
+### Changed
+- Modification of the start heading by holding <kbd>Shift</kbd> is now disabled
+  when the road is snapped at the start point. This prevents the creation of
+  non-compliant OpenDRIVE and side effects with road and lane linking.
+
+### Fixed
+- Double solid road markings
+
+## [0.18.0] - 2023-02-22
+
+### Added
+- Cross sections for building a closed autobahn exit and entry "wedge" area with
+  3 direct junctions
+
+### Changed
+- Rewrite of OpenDRIVE export lane linking to enable non linked lanes and
+  autobahn exit "wedge" area
+
+### Fixed
+- Clean up of old direct junction link when connecting a new road without direct
+  junction
+- Linking of split (direct junction) roads
+
 ## [0.17.2] - 2023-01-25
 
 ### Fixed
@@ -97,7 +146,7 @@
   divide by zero exception)
 
 ### Added
-- Enable changing the heading at the road start by holding SHIFT
+- Enable changing the heading at the road start by holding <kbd>Shift</kbd>
 
 ## [0.11.1] - 2022-06-22
 
@@ -245,7 +294,11 @@
 - Export meshes as .osgb files for esmini using osgconv
 
 
-[Unreleased]: https://github.com/johschmitz/blender-driving-scenario-creator/compare/v0.17.2...HEAD
+[Unreleased]: https://github.com/johschmitz/blender-driving-scenario-creator/compare/v0.19.1...HEAD
+[0.19.1]: https://github.com/johschmitz/blender-driving-scenario-creator/compare/v0.19.0...v0.19.1
+[0.19.0]: https://github.com/johschmitz/blender-driving-scenario-creator/compare/v0.18.1...v0.19.0
+[0.18.1]: https://github.com/johschmitz/blender-driving-scenario-creator/compare/v0.18.0...v0.18.1
+[0.18.0]: https://github.com/johschmitz/blender-driving-scenario-creator/compare/v0.17.2...v0.18.0
 [0.17.2]: https://github.com/johschmitz/blender-driving-scenario-creator/compare/v0.17.1...v0.17.2
 [0.17.1]: https://github.com/johschmitz/blender-driving-scenario-creator/compare/v0.17.0...v0.17.1
 [0.17.0]: https://github.com/johschmitz/blender-driving-scenario-creator/compare/v0.16.0...v0.17.0

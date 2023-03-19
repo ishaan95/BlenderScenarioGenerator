@@ -26,7 +26,7 @@ class DSC_OT_modal_two_point_base(bpy.types.Operator):
     bl_options = {'REGISTER', 'UNDO'}
 
     snap_filter = None
-    snapped_only = False
+    only_snapped_to_object = False
 
     # Elevation adjustment can be 'DISABLED', 'SIDEVIEW', 'GENERIC'
     adjust_elevation = 'DISABLED'
@@ -162,7 +162,7 @@ class DSC_OT_modal_two_point_base(bpy.types.Operator):
         else:
             return True
 
-    def reset_modal_state(self):
+    def reset_params_input(self):
         self.params_input = {
             'point_start': Vector((0.0,0.0,0.0)),
             'point_end': Vector((0.0,0.0,0.0)),
@@ -177,12 +177,14 @@ class DSC_OT_modal_two_point_base(bpy.types.Operator):
             'normal_start': Vector((0.0,0.0,1.0)),
             'design_speed': 130.0,
         }
+
+    def reset_params_snap(self):
         self.params_snap = {
             'id_obj': None,
             'id_extra': None,
             'point': Vector((0.0,0.0,0.0)),
             'normal': Vector((0.0,0.0,1.0)),
-            'type': 'cp_none',
+            'type': None,
             'heading': 0,
             'curvature': 0,
             'slope': 0,
@@ -203,8 +205,10 @@ class DSC_OT_modal_two_point_base(bpy.types.Operator):
                                               'ESCAPE to cancel and exit.')
             # Set custom cursor
             bpy.context.window.cursor_modal_set('CROSSHAIR')
-            self.reset_modal_state()
-            self.snapped = False
+            self.reset_params_input()
+            self.reset_params_snap()
+            self.snapped_to_grid = False
+            self.snapped_to_object = False
             self.selected_elevation = 0
             self.selected_point = helpers.mouse_to_xy_parallel_plane(context, event,
                 self.selected_elevation)
@@ -234,9 +238,12 @@ class DSC_OT_modal_two_point_base(bpy.types.Operator):
                 self.selected_point.z = self.selected_elevation
             else:
                 # Snap to existing objects if any, otherwise xy plane
-                self.snapped, self.params_snap = helpers.mouse_to_object_params(
+                hit, params_snap = helpers.mouse_to_object_params(
                     context, event, filter=self.snap_filter)
-                if self.snapped:
+                # Snap to object if not snapping to grid (with holding CTRL)
+                if hit and not event.ctrl:
+                    self.params_snap = params_snap
+                    self.snapped_to_object = True
                     self.selected_point = self.params_snap['point']
                     if self.state == 'SELECT_START':
                         self.selected_heading_start = self.params_snap['heading']
@@ -246,20 +253,23 @@ class DSC_OT_modal_two_point_base(bpy.types.Operator):
                     self.selected_curvature = self.params_snap['curvature']
                     self.selected_slope = self.params_snap['slope']
                 else:
+                    self.reset_params_snap()
+                    self.snapped_to_object = False
                     selected_point_new = helpers.mouse_to_xy_parallel_plane(context, event,
                         self.selected_elevation)
-                    if event.shift:
+                    if event.shift and self.params_input['connected_start'] == False:
                         # Calculate angular change to update start heading
                         heading_difference = self.calculate_heading_start_difference(
-                                self.params_input['point_start'], self.selected_heading_start, selected_point_new)
+                                self.params_input['point_start'], self.selected_heading_start,
+                                selected_point_new)
                         self.selected_heading_start = self.selected_heading_start - heading_difference
                     self.selected_curvature = 0
                     self.selected_slope = 0
                     self.selected_point = selected_point_new
                     self.selected_normal_start = Vector((0.0,0.0,1.0))
             context.scene.cursor.location = self.selected_point.copy()
-            # CTRL activates grid snapping if not snapped to object
-            if event.ctrl and not self.snapped:
+            # Activate grid snapping when holding CTRL
+            if not self.only_snapped_to_object and event.ctrl:
                 bpy.ops.view3d.snap_cursor_to_grid()
                 self.selected_point = context.scene.cursor.location
             # Process and remember plan view (floor) points according to modal state machine
@@ -295,8 +305,8 @@ class DSC_OT_modal_two_point_base(bpy.types.Operator):
         # Select start and end
         elif event.type == 'LEFTMOUSE':
             if event.value == 'RELEASE':
-                # For junction connecting roads we may only proceed snapped
-                if self.snapped_only and not self.snapped:
+                # For junction connecting roads we may only proceed snapped to the junction joints
+                if self.only_snapped_to_object and not self.snapped_to_object:
                     return {'RUNNING_MODAL'}
                 if self.state == 'SELECT_START':
                     self.id_odr_start = self.params_snap['id_obj']
